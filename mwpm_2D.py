@@ -30,58 +30,32 @@ def apply_noise(list_noise, qc):
             
             qubit_index += 1
 
-# def detection_syndrom(n_ancilla, qc, n_qubits_x, n_qubits_y, simulator):
-#     for i in range(n_qubits_x):
-#         for j in range(n_qubits_y):
-#             if(i != 0):
-#                 reference = i*n_qubits_x*2 - 1 + j
-#             else : 
-#                 reference = i + j
-#             ancilla_indice = n_qubits_x*n_qubits_y + i*n_qubits_x + j
-#             print(reference)
-#             qc.cx(reference, ancilla_indice)
-#             qc.cx(reference + 1, ancilla_indice)
-#             if(i > 0):
-#                 qc.cx(reference - n_qubits_x - 1, ancilla_indice)
-#             if(i < n_qubits_y - 1):
-#                 qc.cx(reference + n_qubits_x, ancilla_indice)  
-
-#         # qc.cx()
-#         # if((i + 1)%n_qubits_x == 0):
-#         #     ligne += 1
-
-#         # qc.cx(i + ligne, n_qubits_y*n_qubits_x + i)
-#         # qc.cx(i + ligne + 1, n_qubits_y*n_qubits_x + i)
-#         # qc.cx(i + ligne + n_qubits_x, n_qubits_y*n_qubits_x + i)
-#         # qc.cx(i + ligne + n_qubits_x + 1, n_qubits_y*n_qubits_x + i)
-#     for i in range(n_ancilla):
-#         qc.measure(n_qubits_x*n_qubits_y + i, i)
 
 def detection_syndrom(n_ancilla, qc, n_qubits_x, n_qubits_y, simulator):
     n_data = qc.num_qubits - n_ancilla
     for i in range(n_qubits_x):
         for j in range(n_qubits_y):
-            reference = i*(2*n_qubits_y + 1) + j
+            reference = i*(2*n_qubits_x - 1) + j
             ancilla_indice = n_data + i*n_qubits_y + j
             qc.cx(reference, ancilla_indice)
             qc.cx(reference + 1, ancilla_indice)
             if(i > 0):
-                qc.cx(reference - n_qubits_y, ancilla_indice)
-            if(i < n_qubits_x - 1):
-                qc.cx(reference + n_qubits_y + 1, ancilla_indice)
+                qc.cx(reference - n_qubits_x + 1, ancilla_indice)
+                print("he")
+            if(i < n_qubits_y):
+                qc.cx(reference + n_qubits_x, ancilla_indice)
+                print("xaca")
+            qc.barrier()
     for i in range(n_ancilla):
         qc.measure(n_data + i, i)
 
+
     result = simulator.run(qc, shots=1).result()
     bitstring = list(result.get_counts().keys())[0]
     syndrom = [int(bit) for bit in bitstring[::-1]]
 
     return syndrom
-    result = simulator.run(qc, shots=1).result()
-    bitstring = list(result.get_counts().keys())[0]
-    syndrom = [int(bit) for bit in bitstring[::-1]]
-
-    return syndrom
+    
 
 def make_graph(syndrom, graph, n_qubits_y, n_qubits_x):
     nodes = [i for i, value in enumerate(syndrom) if value == 1]
@@ -106,15 +80,15 @@ def create_correction(graph, n_qubits):
     for j, i in matching:
         list_correction
 
-n_qubits_x = 7
-n_qubits_y = 4
+n_qubits_x = 3
+n_qubits_y = 2
 n_ancilla = n_qubits_x * n_qubits_y
 qc = QuantumCircuit((n_qubits_x*(n_qubits_y + 1) + n_qubits_y**2) + n_ancilla, n_ancilla)
 simulator = AerSimulator()
 list_noise = create_noise(0.1 , None, n_qubits_x, n_qubits_y)
 apply_noise(list_noise, qc)
 syndrom = detection_syndrom(n_ancilla, qc, n_qubits_x, n_qubits_y, simulator)
-qc.draw()
+print(qc)
 # syndrom = [0, 0, 0, 0, 1, 1, 1, 0, 1, 1, 0, 0, 1, 0, 0, 0, 0, 0]
 # graph = make_graph(syndrom , nx.Graph(), n_qubits_y, n_qubits_x)
 # print(syndrom)

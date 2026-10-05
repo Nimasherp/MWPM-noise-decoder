@@ -5,6 +5,7 @@ from qiskit import QuantumCircuit
 from qiskit_aer import AerSimulator
 from tqdm import tqdm
 import itertools
+from matplotlib.lines import Line2D
 import math
 
 
@@ -21,7 +22,7 @@ def create_noise(px, pz, n_qubits):
 #TODO vortex
 ## 2. Applies the noise list generated from create_noise 
 def apply_noise(list_noise, qc):
-    qubit_index = 0
+    qubit_index = 0 
 
     for noise in list_noise:
 
@@ -124,27 +125,33 @@ def reset_ancilla(n_ancilla, qc, n_qubits):
     return qc
 
 ## 6. Create a correction list, to apply to the supposed noised qubits
-def create_correction(matching, graph_circuit, n_qubits, qc, n_ancilla):
+def create_correction(matching, graph_circuit, n_qubits, qc, n_ancilla, n_qubits_x):
+    n_data = qc.num_qubits - n_ancilla
+    n_x = n_qubits_x - 1
     list_correction = np.full(n_qubits, 'I')
-    for i, j in matching:
-        if(type(i) == tuple and type(j) == tuple):
+
+    def real_border(syn_idx):
+        # closest border
+        row, col = divmod(syn_idx, n_x)
+        side = 0 if col + 1 <= n_x - col else n_x - 1
+        return ('B', n_data + row * n_x + side)
+
+    for a, b in matching:
+        a_is_border = isinstance(a, tuple)
+        b_is_border = isinstance(b, tuple)
+
+        if a_is_border and b_is_border:
             continue
-        if(type(i) == tuple):
-            i = ('B', i[1] + qc.num_qubits - n_ancilla)
-        else :
-            i += qc.num_qubits - n_ancilla
 
-        if(type(j) == tuple):
-            j = ('B', j[1] + qc.num_qubits - n_ancilla)
-        else :
-            j += qc.num_qubits - n_ancilla
+        a = real_border(a[1]) if a_is_border else a + n_data
+        b = real_border(b[1]) if b_is_border else b + n_data
 
-        path = nx.shortest_path(graph_circuit, i, j)
-        path_qubit = [node for node in path if(graph_circuit.nodes[node]["type"] == "qubit")]
-        for qubit in path_qubit:
-            list_correction[qubit] = 'X'
+        path = nx.shortest_path(graph_circuit, a, b)
+        for node in path:
+            if graph_circuit.nodes[node]["type"] == "qubit":
+                list_correction[node] = 'X'
+
     return list_correction
-
 
 
 
@@ -155,22 +162,75 @@ def one_experiment(n_qubits_x, n_qubits_y, px, simulator):
     qc = QuantumCircuit(n_qubits + n_ancilla, n_ancilla)
     
     list_noise = create_noise(px, None, n_qubits)
+    error_before = np.count_nonzero(list_noise == 'X') / n_qubits
     apply_noise(list_noise, qc)
+    n_data = qc.num_qubits - n_ancilla
+    syndrom, graph_circuit = detection_syndrom(n_ancilla, qc, n_qubits_x, n_qubits_y,simulator, nx.Graph())
 
-    syndrom, graph_circuit = detection_syndrom(n_ancilla, qc, n_qubits_x, n_qubits_y, simulator, nx.Graph())
-    matching = mwpm(syndrom, n_qubits_y, n_qubits_x)
-    print(f"syndroms before correction : {syndrom}")
-    # visualize_graph(graph_circuit, n_qubits, n_ancilla, n_qubits_x, n_qubits_y)
-
-    list_correction = create_correction(matching, graph_circuit, n_qubits, qc, n_ancilla)
-    reset_ancilla(n_ancilla, qc, n_qubits)
     
-    apply_noise(list_correction, qc)
-    syndrom_corrected, G = detection_syndrom(n_ancilla, qc, n_qubits_x, n_qubits_y, simulator, nx.Graph())
-    print(f"syndroms after correction : {syndrom_corrected}")
+    matching = mwpm(syndrom, n_qubits_y, n_qubits_x)
+    
 
- 
+    list_correction = create_correction(matching, graph_circuit, n_qubits, qc, n_ancilla, n_qubits_x)
+
+    residual_error = np.where(
+        list_noise == list_correction,
+        'I',
+        'X'
+    )
+    error_after = np.count_nonzero(residual_error == 'X') / n_qubits
+    return error_before, error_after
+
+def main():
+    px_values = np.linspace(0.001, 0.1, 15)
+
+    n_qubits_x = 25
+    n_qubits_y = 20
+
+    simulator = AerSimulator()
+
+    n_tests = 20
+
+    error_before = []
+    error_after = []
+
+    for px in px_values:
+
+        before = 0
+        after = 0
+
+        for _ in tqdm(
+        range(n_tests),
+        desc=f"pX = {px:.2f}"
+        ):
+
+            result_before, result_after = one_experiment(
+                n_qubits_x,
+                n_qubits_y,
+                px,
+                simulator
+            )
+
+            before += result_before
+            after += result_after
+
+        error_before.append(before / n_tests)
+        error_after.append(after / n_tests)
 
 
-one_experiment(6, 2, 0.1, AerSimulator())
+    plt.plot(px_values, error_before, "o-", label="Before MWPM")
+    plt.plot(px_values, error_after, "o-", label="After MWPM")
+
+    plt.xlabel("Bit-flip probability $p_x$")
+    plt.ylabel("Fraction of qubits in error")
+    plt.title("Physical error rate before and after MWPM")
+    plt.legend()
+    plt.grid(alpha=0.3)
+
+    plt.show()
+    
+# one_experiment(4, 5, 0.4, AerSimulator())
+main()
+
+
 
